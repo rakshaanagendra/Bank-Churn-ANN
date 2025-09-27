@@ -1,0 +1,10 @@
+pandas
+numpy
+scikit-learn
+joblib
+flask
+tensorflow
+mlflow
+docker
+pytest
+
