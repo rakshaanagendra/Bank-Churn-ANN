@@ -20,8 +20,10 @@ The model is trained and tracked with **MLflow**, and served in **Production** s
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/<your-username>/bank-churn-api.git
+git clone https://github.com/<rakshaanagendra>/bank-churn-api.git
 cd bank-churn-api
+
+---
 
 ### 2. Create virtual environment
 ```bash
