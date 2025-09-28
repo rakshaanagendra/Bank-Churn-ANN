@@ -2,8 +2,8 @@
 
 A **FastAPI** service that predicts customer churn (whether a customer is likely to leave the bank) using a tuned **Artificial Neural Network (ANN)** model.  
 The model is trained and tracked with **MLflow**, and served in **Production** stage via the MLflow Model Registry.
+<br /><br />
 
----
 
 ## 🚀 Features
 - **FastAPI** REST API with endpoints for:
@@ -13,8 +13,8 @@ The model is trained and tracked with **MLflow**, and served in **Production** s
 - **Preprocessing pipeline** (drop irrelevant IDs, encode categorical, scale numeric) mirrors training.
 - **Model versioning** with MLflow Model Registry.
 - **Automated CI** with GitHub Actions.
+<br /><br />
 
----
 
 ## ⚡ Quickstart
 
@@ -22,24 +22,28 @@ The model is trained and tracked with **MLflow**, and served in **Production** s
 ```bash
 git clone https://github.com/<your-username>/bank-churn-api.git
 cd bank-churn-api
+```
 
 ### 2. Create virtual environment
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Linux/Mac
 .\.venv\Scripts\Activate.ps1  # Windows PowerShell
+```
 
 ### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
+```
 
 ### 4. Run the API
 ```bash
 uvicorn api.main:app --reload --port 8000
+```
 
 ## Example request for single prediction
 POST /predict
-
+```json
 {
   "CreditScore": 619,
   "Geography": "France",
@@ -52,8 +56,9 @@ POST /predict
   "IsActiveMember": 1,
   "EstimatedSalary": 101348.88
 }
+```
+<br /><br />
 
----
 
 ## 📊 Results
 
@@ -62,13 +67,14 @@ POST /predict
 
 ### Precision–Recall Tradeoff
 ![Precision–Recall Curve](artifacts/tuning_precision_recall_curve.png)
-
+<br /><br />
 
 ## 🤖 Model Training
 
--Model is tuned with KerasTuner (tune_ann.py).
--Metrics, hyperparameters, and artifacts are logged with MLflow.
--Best model is registered in the MLflow Model Registry as Churn_ANN.
+- Model is tuned with KerasTuner (tune_ann.py).
+- Metrics, hyperparameters, and artifacts are logged with MLflow.
+- Best model is registered in the MLflow Model Registry as Churn_ANN.
+<br /><br />
 
 ## 📜 License
 MIT License © 2025
