@@ -44,7 +44,7 @@ def load_model_and_meta():
 
         class DummyModel:
             def predict(self, X):
-                return [0] * len(X)
+                return [0] * len(X)  # Always return 0
 
         return DummyModel(), None
 
@@ -58,9 +58,10 @@ def load_model_and_meta():
         raise RuntimeError(f"Could not load MLflow model: {e}")
 
 # ----------------------------------------------------
-# Lazy-load model at startup
+# Global model
 # ----------------------------------------------------
 model = None
+
 @app.on_event("startup")
 def startup_event():
     global model
@@ -70,6 +71,10 @@ def startup_event():
 # ----------------------------------------------------
 # Routes
 # ----------------------------------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.get("/")
 def root():
     return {"message": "Churn Prediction API is running!"}
@@ -77,8 +82,9 @@ def root():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(features: CustomerFeatures):
     try:
+        global model
         if model is None:
-            raise RuntimeError("Model not loaded")
+            model, _ = load_model_and_meta()
 
         input_data = [[
             features.CreditScore,
@@ -98,4 +104,30 @@ def predict(features: CustomerFeatures):
         return {"prediction": prediction}
     except Exception as e:
         logger.error(f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict_batch")
+def predict_batch(payload: list[CustomerFeatures]):
+    try:
+        global model
+        if model is None:
+            model, _ = load_model_and_meta()
+
+        input_data = [[
+            p.CreditScore,
+            p.Geography,
+            p.Gender,
+            p.Age,
+            p.Tenure,
+            p.Balance,
+            p.NumOfProducts,
+            p.HasCrCard,
+            p.IsActiveMember,
+            p.EstimatedSalary
+        ] for p in payload]
+
+        preds = model.predict(input_data)
+        return {"predictions": [int(p) for p in preds]}
+    except Exception as e:
+        logger.error(f"Batch prediction failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
