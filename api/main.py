@@ -12,6 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ----------------------------
+# Detect CI mode
+# ----------------------------
+### NEW FOR CI MODE
+CI_MODE = os.environ.get("CI", "false").lower() == "true"
+
+# ----------------------------
 # Input schema (raw customer JSON)
 # ----------------------------
 class CustomerRaw(BaseModel):
@@ -29,7 +35,6 @@ class CustomerRaw(BaseModel):
     IsActiveMember: int
     EstimatedSalary: float
 
-# Wrapper for batch requests
 class CustomersBatch(BaseModel):
     customers: List[CustomerRaw]
 
@@ -52,7 +57,29 @@ app = FastAPI(title="Churn Prediction API", version="1.0")
 def load_model_and_meta():
     global model, scaler, expected_model_features, scaler_features
 
-    # load MLflow model
+    ### NEW FOR CI MODE
+    if CI_MODE:
+        # ---- Dummy model ----
+        class DummyModel:
+            def predict(self, X):
+                import numpy as np
+                return np.array([[0.5]] * len(X))  # Always 0.5 probability
+
+        model = DummyModel()
+
+        # ---- Dummy scaler ----
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        # Fit on fake data just to satisfy .transform()
+        scaler.fit(np.array([[0, 0], [1, 1]]))
+
+        expected_model_features = ["CreditScore", "Age"]
+        scaler_features = ["CreditScore", "Age"]
+
+        logger.info("✅ Running in CI mode: Dummy model + scaler loaded")
+        return
+
+    # ---------------- Real model load ----------------
     try:
         logger.info(f"Loading MLflow model from {MODEL_URI}")
         model = mlflow.pyfunc.load_model(MODEL_URI)
@@ -61,7 +88,6 @@ def load_model_and_meta():
         logger.exception("Failed to load MLflow model.")
         raise RuntimeError(f"Could not load MLflow model: {e}")
 
-    # load scaler
     try:
         scaler = joblib.load("data/processed/scaler.joblib")
         logger.info("Scaler loaded from data/processed/scaler.joblib")
@@ -69,7 +95,6 @@ def load_model_and_meta():
         logger.exception("Failed to load scaler.")
         raise RuntimeError(f"Could not load scaler: {e}")
 
-    # Load canonical feature order from processed train.csv (drop target 'Exited')
     if not os.path.exists(TRAIN_CSV):
         logger.warning(f"{TRAIN_CSV} not found. Make sure processed train.csv exists.")
         expected_model_features = None
@@ -81,73 +106,55 @@ def load_model_and_meta():
         expected_model_features = cols
         logger.info(f"Expected model features (count={len(expected_model_features)}): {expected_model_features}")
 
-    # get scaler.feature_names_in_ if present (the columns the scaler was fitted on)
     scaler_features = getattr(scaler, "feature_names_in_", None)
     if scaler_features is not None:
         scaler_features = list(scaler_features)
         logger.info(f"Scaler fitted on columns (count={len(scaler_features)}): {scaler_features}")
     else:
-        # fallback: use expected_model_features (best-effort)
         scaler_features = expected_model_features
         logger.info("scaler.feature_names_in_ not available; using expected_model_features as scaler_features fallback.")
 
 # ----------------------------
-# Preprocessing (mirror training pipeline)
+# Preprocessing helpers
 # ----------------------------
 def preprocess_and_align(customer_dict: dict) -> pd.DataFrame:
     global scaler, expected_model_features, scaler_features
 
     df = pd.DataFrame([customer_dict])
 
-    # Drop irrelevants
     for c in ("RowNumber", "CustomerId", "Surname"):
         if c in df.columns:
             df = df.drop(columns=c)
 
-    # Map Gender
     if "Gender" in df.columns:
         df["Gender"] = df["Gender"].map({"Female": 0, "Male": 1})
 
-    # One-hot Geography
     if "Geography" in df.columns:
         df = pd.get_dummies(df, columns=["Geography"], drop_first=True)
 
-    # Ensure scaler_features exist
     if scaler_features is not None:
         for col in scaler_features:
             if col not in df.columns:
                 df[col] = 0
 
-    # Ensure expected_model_features exist and reorder
     if expected_model_features is not None:
         for col in expected_model_features:
             if col not in df.columns:
                 df[col] = 0
         df = df[expected_model_features]
 
-    # Apply scaler
     if scaler is not None and scaler_features is not None:
         scaled_arr = scaler.transform(df[scaler_features])
         df_scaled = pd.DataFrame(scaled_arr, columns=scaler_features, index=df.index)
-
-        if expected_model_features is not None:
-            final = pd.DataFrame(index=df.index)
-            for col in expected_model_features:
-                if col in df_scaled.columns:
-                    final[col] = df_scaled[col]
-                elif col in df.columns:
-                    final[col] = df[col]
-                else:
-                    final[col] = 0
-            df = final
-        else:
-            leftover = [c for c in df.columns if c not in scaler_features]
-            for c in leftover:
-                df_scaled[c] = df[c]
-            df = df_scaled
-
-    # ✅ Force all to float32
-    df = df.astype("float32")
+        final = pd.DataFrame(index=df.index)
+        for col in expected_model_features:
+            if col in df_scaled.columns:
+                final[col] = df_scaled[col]
+            elif col in df.columns:
+                final[col] = df[col]
+            else:
+                final[col] = 0
+        df = final
 
     return df
 
@@ -156,67 +163,50 @@ def preprocess_batch(df: pd.DataFrame) -> pd.DataFrame:
     global scaler, expected_model_features, scaler_features
 
     df = df.copy()
-
-    # Drop irrelevants
     for c in ("RowNumber", "CustomerId", "Surname"):
         if c in df.columns:
             df = df.drop(columns=c)
 
-    # Map Gender
     if "Gender" in df.columns:
         df["Gender"] = df["Gender"].map({"Female": 0, "Male": 1})
 
-    # One-hot Geography
     if "Geography" in df.columns:
         df = pd.get_dummies(df, columns=["Geography"], drop_first=True)
 
-    # Ensure scaler_features exist
     if scaler_features is not None:
         for col in scaler_features:
             if col not in df.columns:
                 df[col] = 0
 
-    # Ensure expected_model_features exist and reorder
     if expected_model_features is not None:
         for col in expected_model_features:
             if col not in df.columns:
                 df[col] = 0
         df = df[expected_model_features]
 
-    # Apply scaler
     if scaler is not None and scaler_features is not None:
         scaled_arr = scaler.transform(df[scaler_features])
         df_scaled = pd.DataFrame(scaled_arr, columns=scaler_features, index=df.index)
-
-        if expected_model_features is not None:
-            final = pd.DataFrame(index=df.index)
-            for col in expected_model_features:
-                if col in df_scaled.columns:
-                    final[col] = df_scaled[col]
-                elif col in df.columns:
-                    final[col] = df[col]
-                else:
-                    final[col] = 0
-            df = final
-        else:
-            leftover = [c for c in df.columns if c not in scaler_features]
-            for c in leftover:
-                df_scaled[c] = df[c]
-            df = df_scaled
-
-    # ✅ Force all to float32
-    df = df.astype("float32")
+        final = pd.DataFrame(index=df.index)
+        for col in expected_model_features:
+            if col in df_scaled.columns:
+                final[col] = df_scaled[col]
+            elif col in df.columns:
+                final[col] = df[col]
+            else:
+                final[col] = 0
+        df = final
 
     return df
 
 # ----------------------------
-# Single Prediction endpoint
+# Prediction endpoints
 # ----------------------------
 @app.post("/predict")
 def predict(customer: CustomerRaw):
     global model
     try:
-        df = preprocess_and_align(customer.dict())
+        df = preprocess_and_align(customer.model_dump())  # ✅ model_dump for Pydantic v2
         preds = model.predict(df)
 
         if isinstance(preds, np.ndarray):
@@ -235,21 +225,13 @@ def predict(customer: CustomerRaw):
         logger.exception("Prediction error")
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
 
-# ----------------------------
-# Batch Prediction endpoint
-# ----------------------------
 @app.post("/predict_batch")
-def predict_batch(batch: CustomersBatch, return_features: Optional[bool] = False):
+def predict_batch(customers: List[CustomerRaw], return_features: Optional[bool] = False):
     global model
     try:
-        customers = batch.customers
-        df_raw = pd.DataFrame([c.dict() for c in customers])
+        df_raw = pd.DataFrame([c.model_dump() for c in customers])  # ✅ model_dump
         df_prepped = preprocess_batch(df_raw)
-
         preds = model.predict(df_prepped)
 
         preds_arr = np.array(preds)
@@ -272,3 +254,8 @@ def predict_batch(batch: CustomersBatch, return_features: Optional[bool] = False
     except Exception as e:
         logger.exception("Batch prediction error")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

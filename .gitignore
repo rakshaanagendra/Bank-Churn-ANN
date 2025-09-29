@@ -1,6 +1,18 @@
-.venv/
+# Python
 __pycache__/
-data/processed/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Data & artifacts (large or sensitive)
+data/raw/
+data/processed/*.csv
+data/processed/scaler.joblib
 models/
 mlruns/
 
+# IDEs
+.vscode/
+.idea/

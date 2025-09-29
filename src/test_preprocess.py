@@ -1,20 +1,32 @@
-from data_preprocessing import (
-    drop_irrelevant, encode_categorical, scale_numeric,
-    split_train_test, save_artifacts
-)
 import pandas as pd
-from pathlib import Path
+from sklearn.preprocessing import StandardScaler
+from src import data_preprocessing as dp
 
-# Load raw data
-df = pd.read_csv(Path("data/raw/Churn_Modelling.csv"))
+def test_encode_categorical_with_scaler():
+    df = pd.DataFrame({
+        "CreditScore": [600],
+        "Gender": ["Male"],
+        "Geography": ["France"],
+        "Age": [40],
+        "Tenure": [5],
+        "Balance": [1000.0],
+        "NumOfProducts": [2],
+        "HasCrCard": [1],
+        "IsActiveMember": [1],
+        "EstimatedSalary": [50000.0]
+    })
 
-# Preprocessing
-df = drop_irrelevant(df)
-df = encode_categorical(df)
-df_scaled, scaler = scale_numeric(df, training=True)
+    # One-hot encode manually first, so scaler sees final columns
+    df_encoded = pd.get_dummies(df.copy(), columns=["Geography"], drop_first=True)
+    df_encoded["Gender"] = df_encoded["Gender"].map({"Female": 0, "Male": 1})
 
-# Split
-train_df, test_df = split_train_test(df_scaled)
+    # Fit scaler on ALL numeric columns after encoding
+    scaler = StandardScaler()
+    scaler.fit(df_encoded)
 
-# Save artifacts
-save_artifacts(train_df, test_df, scaler)
+    # Inject scaler into module
+    dp.scaler = scaler
+
+    encoded = dp.encode_categorical(df)
+    assert isinstance(encoded, pd.DataFrame)
+    assert set(encoded.columns) == set(scaler.feature_names_in_)

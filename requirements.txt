@@ -7,4 +7,6 @@ tensorflow
 mlflow
 docker
 pytest
-
+fastapi
+uvicorn
+requests
