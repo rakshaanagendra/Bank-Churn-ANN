@@ -44,25 +44,28 @@ def load_model_and_meta():
 
         class DummyModel:
             def predict(self, X):
-                # Always predict 0 for all samples
                 return [0] * len(X)
 
         return DummyModel(), None
 
-    # Normal mode → load from MLflow registry
     MODEL_URI = "models:/Churn_ANN@prod"
     try:
         logger.info(f"Loading MLflow model from {MODEL_URI}")
         model = mlflow.pyfunc.load_model(MODEL_URI)
         return model, None
     except Exception as e:
-        logger.error("❌ Failed to load MLflow model.")
+        logger.error(f"❌ Failed to load MLflow model: {e}")
         raise RuntimeError(f"Could not load MLflow model: {e}")
 
 # ----------------------------------------------------
-# Global model at startup
+# Lazy-load model at startup
 # ----------------------------------------------------
-model, _ = load_model_and_meta()
+model = None
+@app.on_event("startup")
+def startup_event():
+    global model
+    if model is None:
+        model, _ = load_model_and_meta()
 
 # ----------------------------------------------------
 # Routes
@@ -74,7 +77,9 @@ def root():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(features: CustomerFeatures):
     try:
-        # Convert request to 2D list for model
+        if model is None:
+            raise RuntimeError("Model not loaded")
+
         input_data = [[
             features.CreditScore,
             features.Geography,
