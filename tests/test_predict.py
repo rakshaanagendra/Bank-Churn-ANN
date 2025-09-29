@@ -1,7 +1,7 @@
 # tests/test_predict.py
 import os
 # Ensure CI mode before importing the app so startup uses DummyModel/scaler
-os.environ["CI"] = "true"
+os.environ["CI_MODE"] = "true"
 
 from fastapi.testclient import TestClient
 from api.main import app, load_model_and_meta
